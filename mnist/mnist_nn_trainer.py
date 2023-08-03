@@ -38,7 +38,7 @@ for name, param in model.named_parameters():
 # train
 #
 
-DEBUG_COUNT = 1000
+DEBUG_COUNT = 500
 NUM_EPOCHS = 30
 BATCH_SIZE = 20
 
@@ -83,11 +83,24 @@ with torch.no_grad():
     for i, data in enumerate(testloader):
         image, target = data
         output = model(image)
-        expected = target.argmax()
-        output = output.argmax()
-        if expected != output:
-            fail_count += 1
-        test_count += 1
+
+        output_vecs = [x for x in output]
+        target_vecs = [x for x in target]
+
+        for o, t in zip(output_vecs, target_vecs):
+            expected = t.argmax()
+            actual = o.argmax()
+
+            if expected != actual:
+                fail_count += 1
+            test_count += 1
+
+            if i % DEBUG_COUNT == 0:
+                print(f"{'pass' if expected == actual else 'fail'}")
+                print(f"    target = {t}")
+                print(f"    output = {o}")
+                print(f"    argmax(t) = {t.argmax()}")
+                print(f"    argmax(o) = {o.argmax()}")
 
     print(f"Testing error rate = {100 * fail_count / test_count}%")
 

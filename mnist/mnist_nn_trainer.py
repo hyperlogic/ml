@@ -114,3 +114,18 @@ for name, param in model.named_parameters():
 
 with open("params.json", "w") as out:
     out.write(json.dumps(params, indent=4))
+
+#
+# dump parameters to a binary file
+#
+
+with open("params.bin", "wb") as out:
+    with torch.no_grad():
+        print("// structure of params.bin")
+        print("struct {")
+        for name, param in model.named_parameters():
+            flat = torch.t(param).flatten()
+            print(f"    float {name.replace('.', '_')}[{len(flat)}];")
+            out.write(flat.numpy().tobytes())
+        print("} Params;")
+

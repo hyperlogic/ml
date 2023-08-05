@@ -3,6 +3,7 @@
 # on the MNIST dataset.
 #
 import mnist_dataset
+import mnist_net
 
 import torch
 import torch.nn as nn
@@ -11,19 +12,7 @@ import torch.nn.functional as F
 import json
 
 
-class Net(nn.Module):
-    def __init__(self):
-        super(Net, self).__init__()
-        self.fc1 = nn.Linear(28 * 28, 512)
-        self.fc2 = nn.Linear(512, 10)
-
-    def forward(self, x):
-        x = F.relu(self.fc1(x))
-        x = self.fc2(x)
-        return x
-
-
-model = Net()
+model = mnist_net.Net()
 criterion = nn.CrossEntropyLoss()
 optimizer = torch.optim.SGD(model.parameters(), lr=0.0001)
 
@@ -116,6 +105,12 @@ with open("params.json", "w") as out:
     out.write(json.dumps(params, indent=4))
 
 #
+# output state_dict
+#
+
+torch.save(model.state_dict(), "model_state_dict.dat")
+
+#
 # dump parameters to a binary file
 #
 
@@ -124,7 +119,7 @@ with open("params.bin", "wb") as out:
         print("// structure of params.bin")
         print("struct {")
         for name, param in model.named_parameters():
-            flat = torch.t(param).flatten()
+            flat = param.flatten()
             print(f"    float {name.replace('.', '_')}[{len(flat)}];")
             out.write(flat.numpy().tobytes())
         print("} Params;")

@@ -1,10 +1,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <float.h>
+#include <stdint.h>
 
 const char* params_filename = "params.bin";
 
-const char* image_7 = " \
+const char* image_7 = "\
 \x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\
 \x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\
 \x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\
@@ -84,12 +85,13 @@ int eval_model(const Params* p_params, const char* image) {
     // convert image to flaot
     float fimage[L0_SIZE];
     for (size_t i = 0; i < L0_SIZE; i++) {
-        fimage[i] = (float)image[i];
+        fimage[i] = (float)(uint8_t)image[i];
     }
 
     // layer 1
     float l1[L1_SIZE];
     mat_mul_vec(l1, p_params->fc1_weight, fimage, L1_SIZE, L0_SIZE);
+
     for (int i = 0; i < L1_SIZE; i++) {
         l1[i] = relu(l1[i] + p_params->fc1_bias[i]);
     }

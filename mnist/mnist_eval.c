@@ -2,8 +2,12 @@
 #include <stdlib.h>
 #include <float.h>
 #include <stdint.h>
+#include <errno.h>
+#include <string.h>
 
-const char* params_filename = "params.bin";
+const char* PARAMS_FILENAME = "params.bin";
+const char* TEST_IMAGES_FILENAME = "t10k-images-idx3-ubyte.gz";
+const char* TEST_LABELS_FILENAME = "t10k-labels-idx1-ubyte.gz";
 
 const char* image_7 = "\
 \x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\
@@ -36,17 +40,29 @@ const char* image_7 = "\
 \x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\
 ";
 
-// structure of params.bin
-typedef struct {
-    float fc1_weight[401408];  // 512 x 784
-    float fc1_bias[512];
-    float fc2_weight[5120];  // 10 x 512
-    float fc2_bias[10];
-} Params;
-
 #define L0_SIZE 784
 #define L1_SIZE 512
 #define L2_SIZE 10
+
+// structure of params.bin
+typedef struct {
+    float fc1_weight[L1_SIZE * L0_SIZE];  // 512 x 784
+    float fc1_bias[L1_SIZE];
+    float fc2_weight[L2_SIZE * L1_SIZE];  // 10 x 512
+    float fc2_bias[L2_SIZE];
+} Params;
+
+typedef struct {
+    int32_t magic;
+    int32_t num_images;
+    int32_t rows;
+    int32_t cols;
+} TestImagesHeader;
+
+typedef struct {
+    int32_t magic;
+    int32_t num_labels;
+} TestLabelsHeader;
 
 float dot_product(const float* w, const float* x, size_t count) {
     float accum = 0.0f;
@@ -106,19 +122,55 @@ int eval_model(const Params* p_params, const char* image) {
     return argmax(l2, L2_SIZE);
 }
 
-int main(int argc, const char* argv[])
+Params* load_model(const char* params_filename)
 {
-    // allocate params
-    Params* p_params = malloc(sizeof(Params));
-
-    // load params from file
+    // open params file
     FILE* fp = fopen(params_filename, "rb");
+    if (!fp) {
+        printf("Error opening file \"%s\", errno = %d\n", params_filename, errno);
+        return NULL;
+    }
+
+    // read data
+    Params* p_params = malloc(sizeof(Params));
     size_t bytes_read = fread(p_params, 1, sizeof(Params), fp);
     if (bytes_read != sizeof(Params)) {
-        printf("Error reading file, result = %ld, expected = %ld\n", bytes_read, sizeof(Params));
-        return 1;
+        printf("Error reading from file \"%s\", bytes_read = %u, expected = %u\n", params_filename, (uint32_t)bytes_read, (uint32_t)sizeof(Params));
+        free(p_params);
+        return NULL;
     }
     fclose(fp);
+
+    return p_params;
+}
+
+void load_test_set(const char* test_images_filename, const char* test_lables_filename)
+{
+    FILE* fp = fopen(test_images_filename, "rb");
+    if (!fp) {
+        printf("Error opening file \"%s\", errno = %d\n", test_images_filename, errno);
+        //return NULL;
+    }
+
+    //TestSet* p_testset = malloc(sizeof(TestSet));
+
+    TestImagesHeader header;
+    memset(&header, 0, sizeof(TestImagesHeader));
+    size_t bytes_read = fread(&header, 1, sizeof(TestImagesHeader), fp);
+    if (bytes_read != sizeof(TestImagesHeader)) {
+        printf("Error reading from file \"%s\", bytes_read = %u expected = %u\n", test_images_filename, (uint32_t)bytes_read, (uint32_t)sizeof(int32_t));
+        //free(p_testset);
+        //return NULL;
+    }
+
+    printf("TestImagesHeader magic = %d, num_images = %d, rows = %d, cols = %d\n", header.magic, header.num_images, header.rows, header.cols);
+}
+
+int main(int argc, const char* argv[])
+{
+    Params* p_params = load_model(PARAMS_FILENAME);
+
+    load_test_set(TEST_IMAGES_FILENAME, TEST_LABELS_FILENAME);
 
     // execute model
     int result = eval_model(p_params, image_7);

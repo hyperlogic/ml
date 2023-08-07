@@ -6,8 +6,8 @@
 #include <string.h>
 
 const char* PARAMS_FILENAME = "params.bin";
-const char* TEST_IMAGES_FILENAME = "t10k-images-idx3-ubyte.gz";
-const char* TEST_LABELS_FILENAME = "t10k-labels-idx1-ubyte.gz";
+const char* TEST_IMAGES_FILENAME = "t10k-images-idx3-ubyte";
+const char* TEST_LABELS_FILENAME = "t10k-labels-idx1-ubyte";
 
 const char* image_7 = "\
 \x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\
@@ -53,16 +53,38 @@ typedef struct {
 } Params;
 
 typedef struct {
-    int32_t magic;
-    int32_t num_images;
-    int32_t rows;
-    int32_t cols;
-} TestImagesHeader;
+    uint32_t magic;
+    uint32_t num_images;
+    uint32_t rows;
+    uint32_t cols;
+} ImagesHeader;
 
 typedef struct {
-    int32_t magic;
-    int32_t num_labels;
-} TestLabelsHeader;
+    uint32_t magic;
+    uint32_t num_labels;
+} LabelsHeader;
+
+typedef struct {
+    ImagesHeader i_header;
+    uint8_t* images;
+    LabelsHeader l_header;
+    uint8_t* labels;
+} DataSet;
+
+DataSet* malloc_data_set(const ImagesHeader* i_header, const LabelsHeader* l_header) {
+    DataSet* data_set = malloc(sizeof(DataSet));
+    data_set->i_header = *i_header;
+    data_set->images = malloc(i_header->num_images * i_header->rows * i_header->cols);
+    data_set->l_header = *l_header;
+    data_set->labels = malloc(l_header->num_labels);
+    return data_set;
+}
+
+void free_data_set(DataSet* data_set) {
+    free(data_set->images);
+    free(data_set->labels);
+    free(data_set);
+}
 
 float dot_product(const float* w, const float* x, size_t count) {
     float accum = 0.0f;
@@ -96,12 +118,12 @@ int argmax(const float* x, size_t count) {
     return max_i;
 }
 
-int eval_model(const Params* p_params, const char* image) {
+int eval_model(const Params* p_params, const uint8_t* image) {
 
     // convert image to flaot
     float fimage[L0_SIZE];
     for (size_t i = 0; i < L0_SIZE; i++) {
-        fimage[i] = (float)(uint8_t)image[i];
+        fimage[i] = (float)image[i];
     }
 
     // layer 1
@@ -144,38 +166,117 @@ Params* load_model(const char* params_filename)
     return p_params;
 }
 
-void load_test_set(const char* test_images_filename, const char* test_lables_filename)
+// be = big endian
+uint32_t read_be_uint32(FILE* fp) {
+    uint8_t bytes[4];
+    size_t bytes_read = fread(&bytes, 1, 4, fp);
+    if (bytes_read != 4) {
+        printf("fread() error, bytes_read = %u expected = %u\n", (uint32_t)bytes_read, (uint32_t)4);
+        return 0;
+    }
+    return (uint32_t)bytes[3] | (uint32_t)bytes[2] << 8 | (uint32_t)bytes[1] << 16 | (uint32_t)bytes[0] << 24;
+}
+
+int read_bytes(FILE* fp, uint8_t* bytes, size_t num_bytes) {
+    uint8_t* p = bytes;
+    size_t bytes_left = num_bytes;
+    size_t bytes_read = 0;
+    do {
+        bytes_read = fread(p, 1, bytes_left, fp);
+        if (bytes_read == 0) {
+            printf("read_bytes: error 0 bytes read\n");
+            return 0;
+        }
+        p += bytes_read;
+        bytes_left -= bytes_read;
+    } while (bytes_read < bytes_left);
+    return 1;
+}
+
+DataSet* load_data_set(const char* test_images_filename, const char* test_labels_filename)
 {
-    FILE* fp = fopen(test_images_filename, "rb");
-    if (!fp) {
+    FILE* i_fp = fopen(test_images_filename, "rb");
+    if (!i_fp) {
         printf("Error opening file \"%s\", errno = %d\n", test_images_filename, errno);
-        //return NULL;
+        return NULL;
     }
 
-    //TestSet* p_testset = malloc(sizeof(TestSet));
-
-    TestImagesHeader header;
-    memset(&header, 0, sizeof(TestImagesHeader));
-    size_t bytes_read = fread(&header, 1, sizeof(TestImagesHeader), fp);
-    if (bytes_read != sizeof(TestImagesHeader)) {
-        printf("Error reading from file \"%s\", bytes_read = %u expected = %u\n", test_images_filename, (uint32_t)bytes_read, (uint32_t)sizeof(int32_t));
-        //free(p_testset);
-        //return NULL;
+    FILE* l_fp = fopen(test_labels_filename, "rb");
+    if (!l_fp) {
+        printf("Error opening file \"%s\", errno = %d\n", test_images_filename, errno);
+        return NULL;
     }
 
-    printf("TestImagesHeader magic = %d, num_images = %d, rows = %d, cols = %d\n", header.magic, header.num_images, header.rows, header.cols);
+    ImagesHeader i_header;
+    i_header.magic = read_be_uint32(i_fp);
+    const uint32_t IMAGE_MAGIC = 2051;
+    if (i_header.magic != IMAGE_MAGIC) {
+        printf("Error loading \"%s\", bad magic number %d, expected %d\n", test_images_filename, i_header.magic, IMAGE_MAGIC);
+        return NULL;
+    }
+    i_header.num_images = read_be_uint32(i_fp);
+    i_header.rows = read_be_uint32(i_fp);
+    i_header.cols = read_be_uint32(i_fp);
+
+    LabelsHeader l_header;
+    l_header.magic = read_be_uint32(l_fp);
+    const uint32_t LABEL_MAGIC = 2049;
+    if (l_header.magic != LABEL_MAGIC) {
+        printf("Error loading \"%s\", bad magic number %d, expected %d\n", test_labels_filename, l_header.magic, LABEL_MAGIC);
+        return NULL;
+    }
+    l_header.num_labels = read_be_uint32(l_fp);
+    if (i_header.num_images != l_header.num_labels) {
+        printf("Error image and label count mismatch, num_images = %d, num_labels = %d\n", i_header.num_images, l_header.num_labels);
+        return NULL;
+    }
+
+    DataSet* data_set = malloc_data_set(&i_header, &l_header);
+
+    size_t i_size = i_header.num_images * i_header.rows * i_header.cols;
+    if (!read_bytes(i_fp, data_set->images, i_size)) {
+        fclose(i_fp);
+        fclose(l_fp);
+        free_data_set(data_set);
+        return NULL;
+    }
+    fclose(i_fp);
+
+    if (!read_bytes(l_fp, data_set->labels, l_header.num_labels)) {
+        fclose(l_fp);
+        free_data_set(data_set);
+        return NULL;
+    }
+    fclose(l_fp);
+
+    return data_set;
 }
 
 int main(int argc, const char* argv[])
 {
     Params* p_params = load_model(PARAMS_FILENAME);
 
-    load_test_set(TEST_IMAGES_FILENAME, TEST_LABELS_FILENAME);
+    DataSet* data_set = load_data_set(TEST_IMAGES_FILENAME, TEST_LABELS_FILENAME);
 
     // execute model
-    int result = eval_model(p_params, image_7);
+    int result = eval_model(p_params, (uint8_t*)image_7);
     printf("expected 7, result = %d\n", result);
 
+    printf("testing\n");
+    uint32_t i_size = data_set->i_header.rows * data_set->i_header.cols;
+    uint32_t num_fails = 0;
+    for (int i = 0; i < data_set->i_header.num_images; i++) {
+        int result = eval_model(p_params, data_set->images + (i_size * i));
+        if (data_set->labels[i] != result) {
+            num_fails++;
+        }
+        if ((i % 100) == 0) {
+            printf(".");
+        }
+    }
+    printf("error rate = %.3f\n", 100.0f * (float)num_fails / (float)data_set->i_header.num_images);
+
     free(p_params);
+    free_data_set(data_set);
     return 0;
 }

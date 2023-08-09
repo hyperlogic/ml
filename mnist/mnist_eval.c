@@ -5,6 +5,8 @@
 #include <errno.h>
 #include <string.h>
 
+#include "dataset.h"
+
 const char* PARAMS_FILENAME = "params.bin";
 const char* TEST_IMAGES_FILENAME = "t10k-images-idx3-ubyte";
 const char* TEST_LABELS_FILENAME = "t10k-labels-idx1-ubyte";
@@ -52,39 +54,6 @@ typedef struct {
     float fc2_bias[L2_SIZE];
 } Params;
 
-typedef struct {
-    uint32_t magic;
-    uint32_t num_images;
-    uint32_t rows;
-    uint32_t cols;
-} ImagesHeader;
-
-typedef struct {
-    uint32_t magic;
-    uint32_t num_labels;
-} LabelsHeader;
-
-typedef struct {
-    ImagesHeader i_header;
-    uint8_t* images;
-    LabelsHeader l_header;
-    uint8_t* labels;
-} DataSet;
-
-DataSet* malloc_data_set(const ImagesHeader* i_header, const LabelsHeader* l_header) {
-    DataSet* data_set = malloc(sizeof(DataSet));
-    data_set->i_header = *i_header;
-    data_set->images = malloc(i_header->num_images * i_header->rows * i_header->cols);
-    data_set->l_header = *l_header;
-    data_set->labels = malloc(l_header->num_labels);
-    return data_set;
-}
-
-void free_data_set(DataSet* data_set) {
-    free(data_set->images);
-    free(data_set->labels);
-    free(data_set);
-}
 
 float dot_product(const float* w, const float* x, size_t count) {
     float accum = 0.0f;
@@ -252,10 +221,8 @@ DataSet* load_data_set(const char* test_images_filename, const char* test_labels
     return data_set;
 }
 
-int main(int argc, const char* argv[])
-{
+int main(int argc, const char* argv[]) {
     Params* p_params = load_model(PARAMS_FILENAME);
-
     DataSet* data_set = load_data_set(TEST_IMAGES_FILENAME, TEST_LABELS_FILENAME);
 
     // execute model

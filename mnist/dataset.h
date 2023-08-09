@@ -26,4 +26,6 @@ DataSet* malloc_data_set(const ImagesHeader* i_header, const LabelsHeader* l_hea
 
 void free_data_set(DataSet* data_set);
 
+DataSet* load_data_set(const char* test_images_filename, const char* test_labels_filename);
+
 #endif

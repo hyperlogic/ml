@@ -1,6 +1,6 @@
-OBJ = dataset.o mnist_eval.o
+OBJ = dataset.o mnist_eval.o math_util.o
 
-DEPENDS = dataset.h
+DEPENDS = dataset.h math_util.h
 
 GCC = gcc
 CFLAGS = -Wall

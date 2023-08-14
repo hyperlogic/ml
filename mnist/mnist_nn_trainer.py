@@ -14,7 +14,7 @@ import json
 
 model = mnist_net.Net()
 criterion = nn.CrossEntropyLoss()
-optimizer = torch.optim.SGD(model.parameters(), lr=0.0001)
+optimizer = torch.optim.SGD(model.parameters(), lr=0.0015, weight_decay=1e-5)
 
 # print model
 print("model =")

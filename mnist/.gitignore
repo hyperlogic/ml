@@ -1,4 +1,8 @@
 # output from mnist_nn_trainer.py
-model_state_dict.json
+model_state_dict.dat
 params.json
 params.bin
+
+# output from mnist_eval.c compilation
+*.o
+*.exe

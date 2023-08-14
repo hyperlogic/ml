@@ -122,7 +122,7 @@ int main(int argc, const char* argv[]) {
             printf(".");
         }
     }
-    printf("error rate = %.3f\n", 100.0f * (float)num_fails / (float)data_set->i_header.num_images);
+    printf("\nError rate = %.3f%%\n", 100.0f * (float)num_fails / (float)data_set->i_header.num_images);
 
     free(p_params);
     free_data_set(data_set);

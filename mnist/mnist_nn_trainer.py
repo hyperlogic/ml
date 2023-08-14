@@ -28,32 +28,76 @@ for name, param in model.named_parameters():
 #
 
 DEBUG_COUNT = 500
-NUM_EPOCHS = 30
+MAX_EPOCHS = 50
 BATCH_SIZE = 20
+VAL_DATASET_SIZE = 10000
 
 # load the training dataset
-trainset = mnist_dataset.MNIST_Dataset(
+full_train_dataset = mnist_dataset.MNIST_Dataset(
     "train-images-idx3-ubyte.gz", "train-labels-idx1-ubyte.gz"
 )
-trainloader = torch.utils.data.DataLoader(trainset, batch_size=BATCH_SIZE, shuffle=True)
 
-for epoch in range(NUM_EPOCHS):
-    loss_accum = 0.0
+# split the dataset into two parts, one for training and one for validation
+torch.manual_seed(42)
+train_dataset, val_dataset = torch.utils.data.random_split(
+    full_train_dataset, [len(full_train_dataset) - VAL_DATASET_SIZE, VAL_DATASET_SIZE]
+)
+torch.manual_seed(torch.initial_seed())
 
-    for i, data in enumerate(trainloader):
-        image, target = data
+train_loader = torch.utils.data.DataLoader(
+    train_dataset, batch_size=BATCH_SIZE, shuffle=True
+)
+val_loader = torch.utils.data.DataLoader(
+    val_dataset, batch_size=BATCH_SIZE, shuffle=True
+)
+
+best_val_loss = float("inf")
+epochs_without_improvement = 0
+max_epochs_without_improvement = 5
+
+for epoch in range(MAX_EPOCHS):
+    # train the model
+    train_loss = 0.0
+    train_count = 0
+
+    for image, target in train_loader:
         optimizer.zero_grad()
         output = model(image)
         loss = criterion(output, target)
-        loss_accum += loss.item()
+
+        train_loss += loss.item()
+        train_count += 1
+
         loss.backward()
         optimizer.step()
 
-        if i % DEBUG_COUNT == DEBUG_COUNT - 1:
-            print(f"    batch = {i}, loss = {loss_accum / DEBUG_COUNT}")
-            loss_accum = 0
+    avg_train_loss = train_loss / train_count
 
-    print(f"Epoch {epoch} complete!")
+    # validate the model
+    val_loss = 0.0
+    val_count = 0
+
+    with torch.no_grad():
+        for image, target in val_loader:
+            output = model(image)
+            loss = criterion(output, target)
+            val_loss += loss.item()
+            val_count += 1
+
+    avg_val_loss = val_loss / val_count
+    if avg_val_loss < best_val_loss:
+        best_val_loss = avg_val_loss
+        epochs_without_improvement = 0
+    else:
+        epochs_without_improvement += 1
+
+    print(
+        f"Epoch {epoch+1}: Training Loss = {avg_train_loss}, Validation Loss = {avg_val_loss}"
+    )
+
+    if epochs_without_improvement >= max_epochs_without_improvement:
+        print("Early stopping triggered. Stopping training.")
+        break
 
 #
 # test
@@ -83,13 +127,6 @@ with torch.no_grad():
             if expected != actual:
                 fail_count += 1
             test_count += 1
-
-            if i % DEBUG_COUNT == 0:
-                print(f"{'pass' if expected == actual else 'fail'}")
-                print(f"    target = {t}")
-                print(f"    output = {o}")
-                print(f"    argmax(t) = {t.argmax()}")
-                print(f"    argmax(o) = {o.argmax()}")
 
     print(f"Testing error rate = {100 * fail_count / test_count}%")
 
@@ -123,4 +160,3 @@ with open("params.bin", "wb") as out:
             print(f"    float {name.replace('.', '_')}[{len(flat)}];")
             out.write(flat.numpy().tobytes())
         print("} Params;")
-

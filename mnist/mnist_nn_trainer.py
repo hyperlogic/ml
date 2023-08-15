@@ -25,7 +25,7 @@ def main():
 
     model = mnist_net.Net().to(device)
     criterion = nn.CrossEntropyLoss()
-    optimizer = torch.optim.SGD(model.parameters(), lr=0.0015, weight_decay=1e-5)
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.0001)
 
     # print model
     print("model =")
@@ -60,7 +60,7 @@ def main():
 
     best_val_loss = float("inf")
     epochs_without_improvement = 0
-    max_epochs_without_improvement = 5
+    max_epochs_without_improvement = 10
     train_start_time = time.time()
 
     for epoch in range(MAX_EPOCHS):

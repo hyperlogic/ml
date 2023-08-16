@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <errno.h>
 
 DataSet* malloc_data_set(const ImagesHeader* i_header, const LabelsHeader* l_header) {
     DataSet* data_set = malloc(sizeof(DataSet));

@@ -120,6 +120,7 @@ int main(int argc, const char* argv[]) {
         }
         if ((i % 100) == 0) {
             printf(".");
+            fflush(stdout);
         }
     }
     printf("\nError rate = %.3f%%\n", 100.0f * (float)num_fails / (float)data_set->i_header.num_images);

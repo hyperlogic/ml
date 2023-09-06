@@ -16,8 +16,12 @@ corners = [[math.cos(i * theta), math.sin(i * theta)] for i in range(3)]
 # midpoints of the triangle along with normal vectors pointing inward.
 offset = math.pi / 3
 seg_len = -math.cos(1 * theta)
-midpoints = [[seg_len * math.cos(i * theta + offset), seg_len * math.sin(i * theta + offset)] for i in range(3)]
+midpoints = [
+    [seg_len * math.cos(i * theta + offset), seg_len * math.sin(i * theta + offset)]
+    for i in range(3)
+]
 normals = [corners[(i + 2) % 3] for i in range(3)]
+
 
 def is_inside_triangle(p):
     for i in range(3):
@@ -26,12 +30,27 @@ def is_inside_triangle(p):
             return False
     return True
 
+
+def one_hot(klass, num_classes=2):
+    return [1.0 if klass == i else 0.0 for i in range(num_classes)]
+
+
 def generate_data(num_items):
-    points = np.array([np.random.uniform(-1, 1, num_items),np.random.uniform(-1, 1, num_items)]).transpose()
-    inside = [is_inside_triangle(p) for p in points]
-    return points, inside
+    points = np.array(
+        [np.random.uniform(-1, 1, num_items), np.random.uniform(-1, 1, num_items)]
+    ).transpose()
+    categories = np.array([one_hot(1 if is_inside_triangle(p) else 0) for p in points])
+    return points, categories
 
-points, inside = generate_data(10)
 
-for i in range(len(points)):
-    print(f"{points[i]} => {inside[i]}")
+# generate training data
+points, categories = generate_data(10000)
+
+points.dump("train-points.np")
+categories.dump("train-categories.np")
+
+# generate test data
+points, categories = generate_data(3000)
+
+points.dump("test-points.np")
+categories.dump("test-categories.np")

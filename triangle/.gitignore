@@ -2,3 +2,5 @@ train-points.npy
 train-categories.npy
 test-points.npy
 test-categories.npy
+params.bin
+model_state_dict.dat

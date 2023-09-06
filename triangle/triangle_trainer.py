@@ -12,8 +12,8 @@ MAX_EPOCHS = 50
 class Net(nn.Module):
     def __init__(self):
         super(Net, self).__init__()
-        self.fc1 = nn.Linear(2, 4 * 1024)
-        self.fc2 = nn.Linear(4 * 1024, 2)
+        self.fc1 = nn.Linear(2, 16)
+        self.fc2 = nn.Linear(16, 2)
 
     def forward(self, x):
         x = F.relu(self.fc1(x))
@@ -162,3 +162,23 @@ with torch.no_grad():
             test_count += 1
 
     print(f"Testing error rate = {100 * fail_count / test_count}%")
+
+#
+# output state_dict
+#
+
+torch.save(model.state_dict(), "model_state_dict.dat")
+
+#
+# dump parameters to a binary file
+#
+
+with open("params.bin", "wb") as out:
+    with torch.no_grad():
+        print("// structure of params.bin")
+        print("struct {")
+        for name, param in model.named_parameters():
+            flat = param.cpu().flatten()
+            print(f"    float {name.replace('.', '_')}[{len(flat)}];")
+            out.write(flat.numpy().tobytes())
+        print("} Params;")

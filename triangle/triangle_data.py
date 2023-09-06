@@ -46,11 +46,11 @@ def generate_data(num_items):
 # generate training data
 points, categories = generate_data(10000)
 
-points.dump("train-points.np")
-categories.dump("train-categories.np")
+points.dump("train-points.npy")
+categories.dump("train-categories.npy")
 
 # generate test data
 points, categories = generate_data(3000)
 
-points.dump("test-points.np")
-categories.dump("test-categories.np")
+points.dump("test-points.npy")
+categories.dump("test-categories.npy")

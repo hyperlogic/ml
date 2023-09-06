@@ -1,4 +1,4 @@
-DATA_FILES = train-points.np train-categories.np test-points.np test-categories.np
+DATA_FILES = train-points.npy train-categories.npy test-points.npy test-categories.npy
 
 all: $(DATA_FILES)
 

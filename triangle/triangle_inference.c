@@ -30,6 +30,7 @@ typedef struct {
 
 struct NodeStruct;
 typedef void (*Operator)(struct NodeStruct* self, const struct NodeStruct* left, const struct NodeStruct* right);
+typedef float (*GradientOperator)(const struct NodeStruct* self, const struct NodeStruct* left, const struct NodeStruct* right);
 
 #define MAX_NUM_CHILDREN 2
 #define MAX_NUM_VALUES 32
@@ -39,10 +40,13 @@ typedef struct NodeStruct {
     int child[MAX_NUM_CHILDREN];
     Shape shape;
     Operator op;
+    GradientOperator grad_op;
     float value[MAX_NUM_VALUES];
 } Node;
 
-
+//
+// ops - for evaluating computationg graph forward
+//
 
 // matrix multiplication
 void mul_op(Node* self, const Node* left, const Node* right) {
@@ -88,6 +92,34 @@ void relu_op(Node* self, const Node* left, const Node* right) {
     }
 }
 
+//
+// gradient ops - for backprop
+//
+
+float ident_grad(const Node* self, const Node* left, const Node* right) {
+    return 1.0f;
+}
+
+float mul_grad(const Node* self, const Node* left, const Node* right) {
+    // TODO:
+    return 0.0f;
+}
+
+float add_grad(const Node* self, const Node* left, const Node* right) {
+    // TODO:
+    return 0.0f;
+}
+
+float dot_grad(const Node* self, const Node* left, const Node* right) {
+    // TODO:
+    return 0.0f;
+}
+
+float relu_grad(const Node* self, const Node* left, const Node* right) {
+    // TODO:
+    return 0.0f;
+}
+
 #define SHAPE_R_2 {2, 1}
 #define SHAPE_R_16 {16, 1}
 #define SHAPE_SCALAR {1, 1}
@@ -95,22 +127,25 @@ void relu_op(Node* self, const Node* left, const Node* right) {
 // computational graph for loss of MLP
 // L = 1/2 * dot(y, y_hat)
 // where y = W_2 * relu(W_1 * x + b_1) + b_2
-Node g_node[14] = {
-    {"L", -1, {1, 2}, SHAPE_SCALAR, mul_op}, // 0
-    {"1/2", 0, {-1, -1}, SHAPE_SCALAR, NULL}, // 1
-    {"u_2", 0, {3, 13}, SHAPE_SCALAR, dot_op}, // 2
-    {"y", 2, {4, 12}, SHAPE_R_2, add_op}, // 3
-    {"u_4", 3, {5, 6}, SHAPE_R_2, mul_op}, // 4
-    {"W_2", 4, {-1, -1}, {2, 16}, NULL}, // 5
-    {"u_6", 4, {7, -1}, SHAPE_R_16, relu_op}, // 6
-    {"u_7", 6, {8, 11}, SHAPE_R_16, add_op}, // 7
-    {"u_8", 7, {9, 10}, SHAPE_R_16, mul_op}, // 8
-    {"W_1", 8, {-1, -1}, {16, 2}, NULL}, // 9
-    {"x", 8, {-1, -1}, SHAPE_R_2, NULL}, // 10
-    {"b_1", 7, {-1, -1}, SHAPE_R_16, NULL}, // 11
-    {"b_2", 3, {-1, -1}, SHAPE_R_2, NULL}, // 12
-    {"y_hat", 2, {-1, -1}, SHAPE_R_2, NULL}, // 13
+#define NUM_NODES 14
+Node g_node[NUM_NODES] = {
+    {"L", -1, {1, 2}, SHAPE_SCALAR, mul_op, mul_grad}, // 0
+    {"1/2", 0, {-1, -1}, SHAPE_SCALAR, NULL, ident_grad}, // 1
+    {"u_2", 0, {3, 13}, SHAPE_SCALAR, dot_op, dot_grad}, // 2
+    {"y", 2, {4, 12}, SHAPE_R_2, add_op, add_grad}, // 3
+    {"u_4", 3, {5, 6}, SHAPE_R_2, mul_op, mul_grad}, // 4
+    {"W_2", 4, {-1, -1}, {2, 16}, NULL, ident_grad}, // 5
+    {"u_6", 4, {7, -1}, SHAPE_R_16, relu_op, relu_grad}, // 6
+    {"u_7", 6, {8, 11}, SHAPE_R_16, add_op, add_grad}, // 7
+    {"u_8", 7, {9, 10}, SHAPE_R_16, mul_op, mul_grad}, // 8
+    {"W_1", 8, {-1, -1}, {16, 2}, NULL, ident_grad}, // 9
+    {"x", 8, {-1, -1}, SHAPE_R_2, NULL, ident_grad}, // 10
+    {"b_1", 7, {-1, -1}, SHAPE_R_16, NULL, ident_grad}, // 11
+    {"b_2", 3, {-1, -1}, SHAPE_R_2, NULL, ident_grad}, // 12
+    {"y_hat", 2, {-1, -1}, SHAPE_R_2, NULL, ident_grad}, // 13
 };
+
+float g_grad_table[NUM_NODES];
 
 void print_graph(const Node* node, int indent) {
     for (int i = 0; i < indent; i++) {
@@ -177,8 +212,7 @@ void print_matrix(const float* mat, int num_rows, int num_cols) {
     }
 }
 
-void print_params(const Params* p_params)
-{
+void print_params(const Params* p_params) {
     printf("fc1_weight =\n");
     print_matrix(p_params->fc1_weight, L1_SIZE, L0_SIZE);
     printf("fc1_bias =\n");
@@ -189,6 +223,16 @@ void print_params(const Params* p_params)
     print_matrix(p_params->fc2_bias, 1, L2_SIZE);
 }
 
+void backward() {
+    g_grad_table[0] = 1.0f;
+    for (int j = 1; j >= NUM_NODES; j++) {
+        const Node* node = g_node + j;
+        int parent_index = node->parent;
+        Node* left = node->child[0] >= 0 ? g_node + node->child[0] : NULL;
+        Node* right = node->child[1] >= 0 ? g_node + node->child[1] : NULL;
+        g_grad_table[j] = g_grad_table[parent_index] * node->grad_op(node, left, right);
+    }
+}
 
 int main(int argc, const char* argv[]) {
     Params* p_params = load_model(PARAMS_FILENAME);
@@ -216,6 +260,8 @@ int main(int argc, const char* argv[]) {
     forward(g_node);
 
     print_graph(g_node, 0);
+
+    backward(g_node);
 
     free(p_params);
 

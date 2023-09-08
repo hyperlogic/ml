@@ -43,6 +43,8 @@ print(f"expected = {expected}")
 loss = criterion(output, expected)
 loss.backward()
 
+print(f"loss = {loss}")
+
 print("parameters =")
 for name, param in model.named_parameters():
     print(f"{name}.data = {param.data}")

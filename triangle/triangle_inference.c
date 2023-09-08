@@ -26,31 +26,35 @@ typedef struct {
     int num_cols;
 } Shape;
 
-//#define INDEX(r, c) r * NUM_COLS + c
-
-struct NodeStruct;
-typedef void (*Operator)(struct NodeStruct* self, const struct NodeStruct* left, const struct NodeStruct* right);
-typedef float (*GradientOperator)(const struct NodeStruct* self, const struct NodeStruct* left, const struct NodeStruct* right);
+struct Node;
+typedef void (*Operator)(struct Node* self);
+typedef void (*GradientOperator)(const struct Node* self, struct Node* child);
 
 #define MAX_NUM_CHILDREN 2
 #define MAX_NUM_VALUES 32
-typedef struct NodeStruct {
+typedef struct Node {
     const char* name;
-    int self;
-    int parent;
-    int child[MAX_NUM_CHILDREN];
+    int self_index;
+    int parent_index;
+    int child_index[MAX_NUM_CHILDREN];
     Shape shape;
     Operator op;
     GradientOperator grad_op;
     float value[MAX_NUM_VALUES];
-} Node;
+    float grad[MAX_NUM_VALUES];
+    struct Node* parent;
+    struct Node* child[MAX_NUM_CHILDREN];
+} Node_t;
 
 //
-// ops - for evaluating computationg graph forward
+// ops - for evaluating evaluating graph "forward"
 //
 
 // matrix multiplication
-void mul_op(Node* self, const Node* left, const Node* right) {
+void mul_op(Node_t* self) {
+    const Node_t* left = self->child[0];
+    const Node_t* right = self->child[1];
+    assert(left && right);
     assert(left->shape.num_cols == right->shape.num_rows);
     assert(self->shape.num_rows == left->shape.num_rows && self->shape.num_cols == right->shape.num_cols);
     for (int r = 0; r < self->shape.num_rows; r++) {
@@ -65,7 +69,10 @@ void mul_op(Node* self, const Node* left, const Node* right) {
 }
 
 // component-wise addition of two column vectors
-void add_op(Node* self, const Node* left, const Node* right) {
+void add_op(Node_t* self) {
+    const Node_t* left = self->child[0];
+    const Node_t* right = self->child[1];
+    assert(left && right);
     assert(left->shape.num_cols == 1 && right->shape.num_cols == 1);
     assert(left->shape.num_rows == right->shape.num_rows);
     for (int i = 0; i < left->shape.num_rows; i++) {
@@ -74,7 +81,10 @@ void add_op(Node* self, const Node* left, const Node* right) {
 }
 
 // component-wise subtraction of two column vectors
-void sub_op(Node* self, const Node* left, const Node* right) {
+void sub_op(Node_t* self) {
+    const Node_t* left = self->child[0];
+    const Node_t* right = self->child[1];
+    assert(left && right);
     assert(left->shape.num_cols == 1 && right->shape.num_cols == 1);
     assert(left->shape.num_rows == right->shape.num_rows);
     for (int i = 0; i < left->shape.num_rows; i++) {
@@ -83,7 +93,9 @@ void sub_op(Node* self, const Node* left, const Node* right) {
 }
 
 // dot product of a vector with itself.
-void dot_self_op(Node* self, const Node* left, const Node* right) {
+void dot_self_op(Node_t* self) {
+    const Node_t* left = self->child[0];
+    assert(left);
     assert(left->shape.num_cols == 1);
     float accum = 0;
     for (int i = 0; i < left->shape.num_rows; i++) {
@@ -93,7 +105,9 @@ void dot_self_op(Node* self, const Node* left, const Node* right) {
 }
 
 // component-wise relu of a column vector
-void relu_op(Node* self, const Node* left, const Node* right) {
+void relu_op(Node_t* self) {
+    const Node_t* left = self->child[0];
+    assert(left);
     assert(left->shape.num_cols == 1);
     for (int i = 0; i < left->shape.num_rows; i++) {
         self->value[i] = relu(left->value[i]);
@@ -101,32 +115,33 @@ void relu_op(Node* self, const Node* left, const Node* right) {
 }
 
 //
-// gradient ops - for backprop
+// gradient ops - for evaluating gradients "backward"
+// it returns the partial derivative of self w.r.t. the child
 //
 
-float mul_grad(const Node* self, const Node* left, const Node* right) {
-    // TODO:
-    return 0.0f;
+void mul_grad(const Node_t* self, Node_t* child) {
+    assert(child == self->child[0] || child == self->child[1]);
+    if (child == self->child[0]) {
+        memcpy(child->grad, self->child[1]->value, sizeof(float) * MAX_NUM_VALUES);
+    } else {
+        memcpy(child->grad, self->child[0]->value, sizeof(float) * MAX_NUM_VALUES);
+    }
 }
 
-float add_grad(const Node* self, const Node* left, const Node* right) {
+void add_grad(const Node_t* self, Node_t* child) {
     // TODO:
-    return 0.0f;
 }
 
-float sub_grad(const Node* self, const Node* left, const Node* right) {
+void sub_grad(const Node_t* self, Node_t* child) {
     // TODO:
-    return 0.0f;
 }
 
-float dot_self_grad(const Node* self, const Node* left, const Node* right) {
+void dot_self_grad(const Node_t* self, Node_t* child) {
     // TODO:
-    return 0.0f;
 }
 
-float relu_grad(const Node* self, const Node* left, const Node* right) {
+void relu_grad(const Node_t* self, Node_t* child) {
     // TODO:
-    return 0.0f;
 }
 
 #define SHAPE_R_2 {2, 1}
@@ -137,7 +152,7 @@ float relu_grad(const Node* self, const Node* left, const Node* right) {
 // L = 1/2 * dot(y, y_hat)
 // where y = W_2 * relu(W_1 * x + b_1) + b_2
 #define NUM_NODES 15
-Node g_node[NUM_NODES] = {
+Node_t g_node[NUM_NODES] = {
     {"L", 0, -1, {1, 2}, SHAPE_SCALAR, mul_op, mul_grad}, // L
     {"1/2", 1, 0, {-1, -1}, SHAPE_SCALAR, NULL, NULL, {0.5f}},
     {"u_2", 2, 0, {3, -1}, SHAPE_SCALAR, dot_self_op, dot_self_grad},
@@ -164,7 +179,7 @@ Node g_node[NUM_NODES] = {
 
 float g_grad_table[NUM_NODES];
 
-void print_graph(const Node* node, int indent) {
+void print_graph(const Node_t* node, int indent) {
     for (int i = 0; i < indent; i++) {
         printf("    ");
     }
@@ -176,17 +191,17 @@ void print_graph(const Node* node, int indent) {
     }
     printf("]\n");
 
-    if (node->child[0] >= 0) {
-        print_graph(g_node + node->child[0], indent + 1);
+    if (node->child[0]) {
+        print_graph(node->child[0], indent + 1);
     }
-    if (node->child[1] >= 0) {
-        print_graph(g_node + node->child[1], indent + 1);
+    if (node->child[1]) {
+        print_graph(node->child[1], indent + 1);
     }
 }
 
-void forward(Node* node) {
-    Node* left = node->child[0] >= 0 ? g_node + node->child[0] : NULL;
-    Node* right = node->child[1] >= 0 ? g_node + node->child[1] : NULL;
+void forward(Node_t* node) {
+    Node_t* left = node->child[0] ? node->child[0] : NULL;
+    Node_t* right = node->child[1] ? node->child[1] : NULL;
     if (left) {
         forward(left);
     }
@@ -194,7 +209,7 @@ void forward(Node* node) {
         forward(right);
     }
     if (node->op) {
-        node->op(node, left, right);
+        node->op(node);
     }
 }
 
@@ -240,32 +255,46 @@ void print_params(const Params* p_params) {
 }
 
 void backward() {
+    /*
     g_grad_table[0] = 1.0f;
     for (int j = 1; j >= NUM_NODES; j++) {
-        const Node* node = g_node + j;
+        const Node_t* node = g_node + j;
         int parent_index = node->parent;
-        Node* left = node->child[0] >= 0 ? g_node + node->child[0] : NULL;
-        Node* right = node->child[1] >= 0 ? g_node + node->child[1] : NULL;
-        g_grad_table[j] = g_grad_table[parent_index] * node->grad_op(node, left, right);
+        Node_t* parent = g_node + parent_index;
+        Node_t* left = node->child[0] >= 0 ? g_node + node->child[0] : NULL;
+        Node_t* right = node->child[1] >= 0 ? g_node + node->child[1] : NULL;
+        g_grad_table[j] = g_grad_table[parent_index] * parent->grad_op(parent, node);
     }
+    */
+}
+
+void init_graph(const Params* params)
+{
+    // update pointers from indices
+    for (int i = 0; i < NUM_NODES; i++) {
+        g_node[i].parent = g_node[i].parent_index >= 0 ? g_node + g_node[i].parent_index : NULL;
+        g_node[i].child[0] = g_node[i].child_index[0] >= 0 ? g_node + g_node[i].child_index[0] : NULL;
+        g_node[i].child[1] = g_node[i].child_index[1] >= 0 ? g_node + g_node[i].child_index[1] : NULL;
+    }
+
+    // W_1
+    memcpy(g_node[W_1_INDEX].value, params->fc1_weight, L1_SIZE * L0_SIZE * sizeof(float));
+    // b_1
+    memcpy(g_node[B_1_INDEX].value, params->fc1_bias, L1_SIZE * sizeof(float));
+    // W_2
+    memcpy(g_node[W_2_INDEX].value, params->fc2_weight, L2_SIZE * L1_SIZE * sizeof(float));
+    // b_2
+    memcpy(g_node[B_2_INDEX].value, params->fc2_bias, L2_SIZE * sizeof(float));
 }
 
 int main(int argc, const char* argv[]) {
-    Params* p_params = load_model(PARAMS_FILENAME);
+    Params* params = load_model(PARAMS_FILENAME);
 
-    print_params(p_params);
+    print_params(params);
 
     // initialize the computation graph with the parameters from the model.
-    // W_1
-    memcpy(g_node[W_1_INDEX].value, p_params->fc1_weight, L1_SIZE * L0_SIZE * sizeof(float));
-    // b_1
-    memcpy(g_node[B_1_INDEX].value, p_params->fc1_bias, L1_SIZE * sizeof(float));
-    // W_2
-    memcpy(g_node[W_2_INDEX].value, p_params->fc2_weight, L2_SIZE * L1_SIZE * sizeof(float));
-    // b_2
-    memcpy(g_node[B_2_INDEX].value, p_params->fc2_bias, L2_SIZE * sizeof(float));
-    // 1/2
-    //g_node[1].value[0] = 0.5f;
+    init_graph(params);
+
     // y_hat
     g_node[Y_HAT_INDEX].value[0] = 0.0f;
     g_node[Y_HAT_INDEX].value[1] = 1.0f;
@@ -279,7 +308,7 @@ int main(int argc, const char* argv[]) {
 
     backward(g_node);
 
-    free(p_params);
+    free(params);
 
     return 0;
 }

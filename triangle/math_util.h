@@ -26,6 +26,8 @@ typedef float (*CompFunc)(float);
 
 void tensor_comp_func(Tensor* result, const Tensor* lhs, CompFunc func);
 
+void tensor_print(const Tensor* t, int num_indent_spaces);
+
 float relu(float x);
 
 int argmax(const float* x, size_t count);

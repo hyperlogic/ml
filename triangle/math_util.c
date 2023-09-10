@@ -1,6 +1,7 @@
 #include "math_util.h"
 
 #include <assert.h>
+#include <stdio.h>
 
 #define CHECK_SHAPE_SIZE(tensor) assert(tensor->shape.num_cols * tensor->shape.num_rows <= MAX_TENSOR_VALUES)
 
@@ -71,6 +72,22 @@ void tensor_comp_func(Tensor* result, const Tensor* lhs, CompFunc func) {
     const int num_values = lhs->shape.num_cols * lhs->shape.num_rows;
     for (int i = 0; i < num_values; i++) {
         result->value[i] = func(lhs->value[i]);
+    }
+}
+
+void tensor_print(const Tensor* t, int num_indent_spaces) {
+    CHECK_SHAPE_SIZE(t);
+
+    for (int r = 0; r < t->shape.num_rows; r++) {
+        for (int i = 0; i < num_indent_spaces; i++) {
+            printf(" ");
+        }
+        printf("|");
+
+        for (int c = 0; c < t->shape.num_cols; c++) {
+            printf("%9.4f", t->value[r * t->shape.num_cols + c]);
+        }
+        printf(" |\n");
     }
 }
 

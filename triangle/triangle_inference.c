@@ -36,6 +36,7 @@ typedef struct Node {
     GradientOperator grad_op;
     struct Node* parent;
     struct Node* child[MAX_NUM_CHILDREN];
+    Tensor grad;
 } Node_t;
 
 //
@@ -151,21 +152,15 @@ Node_t g_node[NUM_NODES] = {
 #define Y_HAT_INDEX 14
 #define X_INDEX 11
 
-float g_grad_table[NUM_NODES];
+Tensor g_grad_table[NUM_NODES];
 
 void print_graph(const Node_t* node, int indent) {
     for (int i = 0; i < indent; i++) {
         printf("    ");
     }
 
-    // print name
-    printf("%s = [ ", node->name);
-
-    // print tensor elements...
-    for (int i = 0; i < node->data.shape.num_cols * node->data.shape.num_rows; i++) {
-        printf("%0.4f ", node->data.value[i]);
-    }
-    printf("]\n");
+    printf("%s =\n", node->name);
+    tensor_print(&node->data, indent * 4 + 4);
 
     if (node->child[0]) {
         print_graph(node->child[0], indent + 1);

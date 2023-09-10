@@ -32,6 +32,7 @@ criterion = nn.MSELoss()
 
 x = torch.Tensor([0.5, 0.5]).to(device)
 output = model(x)
+output.retain_grad() # keep gradient for debugging
 
 print(f"x = {x}")
 print(f"output = {output}")
@@ -41,9 +42,14 @@ expected = torch.Tensor(one_hot(1)).to(device)
 print(f"expected = {expected}")
 
 loss = criterion(output, expected)
+loss.retain_grad()  # keep the gradient for debugging
 loss.backward()
 
 print(f"loss = {loss}")
+print(f"loss.grad = {loss.grad}")
+
+print(f"output = {output}")
+print(f"output.grad = {output.grad}")
 
 print("parameters =")
 for name, param in model.named_parameters():

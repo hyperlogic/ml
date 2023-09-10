@@ -21,27 +21,19 @@ typedef struct {
     float fc2_bias[L2_SIZE];
 } Params;
 
-typedef struct {
-    int num_rows;
-    int num_cols;
-} Shape;
-
 struct Node;
 typedef void (*Operator)(struct Node* self);
 typedef void (*GradientOperator)(const struct Node* self, struct Node* child);
 
 #define MAX_NUM_CHILDREN 2
-#define MAX_NUM_VALUES 32
 typedef struct Node {
     const char* name;
     int self_index;
     int parent_index;
     int child_index[MAX_NUM_CHILDREN];
-    Shape shape;
+    Tensor data;
     Operator op;
     GradientOperator grad_op;
-    float value[MAX_NUM_VALUES];
-    float grad[MAX_NUM_VALUES];
     struct Node* parent;
     struct Node* child[MAX_NUM_CHILDREN];
 } Node_t;
@@ -52,66 +44,53 @@ typedef struct Node {
 
 // matrix multiplication
 void mul_op(Node_t* self) {
+    assert(self);
     const Node_t* left = self->child[0];
     const Node_t* right = self->child[1];
     assert(left && right);
-    assert(left->shape.num_cols == right->shape.num_rows);
-    assert(self->shape.num_rows == left->shape.num_rows && self->shape.num_cols == right->shape.num_cols);
-    for (int r = 0; r < self->shape.num_rows; r++) {
-        for (int c = 0; c < self->shape.num_cols; c++) {
-            float accum = 0;
-            for (int i = 0; i < left->shape.num_cols; i++) {
-                accum += left->value[r * left->shape.num_cols + i] * right->value[i * right->shape.num_cols + c];
-            }
-            self->value[r * self->shape.num_cols + c] = accum;
-        }
-    }
+    tensor_mul(&self->data, &left->data, &right->data);
 }
 
 // component-wise addition of two column vectors
 void add_op(Node_t* self) {
+    assert(self);
     const Node_t* left = self->child[0];
     const Node_t* right = self->child[1];
     assert(left && right);
-    assert(left->shape.num_cols == 1 && right->shape.num_cols == 1);
-    assert(left->shape.num_rows == right->shape.num_rows);
-    for (int i = 0; i < left->shape.num_rows; i++) {
-        self->value[i] = left->value[i] + right->value[i];
-    }
+    tensor_add(&self->data, &left->data, &right->data);
 }
 
 // component-wise subtraction of two column vectors
 void sub_op(Node_t* self) {
+    assert(self);
     const Node_t* left = self->child[0];
     const Node_t* right = self->child[1];
     assert(left && right);
-    assert(left->shape.num_cols == 1 && right->shape.num_cols == 1);
-    assert(left->shape.num_rows == right->shape.num_rows);
-    for (int i = 0; i < left->shape.num_rows; i++) {
-        self->value[i] = left->value[i] - right->value[i];
-    }
+    tensor_sub(&self->data, &left->data, &right->data);
 }
 
 // dot product of a vector with itself.
 void dot_self_op(Node_t* self) {
+    assert(self);
     const Node_t* left = self->child[0];
     assert(left);
-    assert(left->shape.num_cols == 1);
-    float accum = 0;
-    for (int i = 0; i < left->shape.num_rows; i++) {
-        accum += left->value[i] * left->value[i];
-    }
-    self->value[0] = accum;
+
+    assert(left->data.shape.num_cols == 1);
+
+    Tensor temp = {{left->data.shape.num_cols, left->data.shape.num_rows}};
+    tensor_transpose_xy(&temp, &left->data);
+    tensor_mul(&self->data, &temp, &left->data);
 }
 
 // component-wise relu of a column vector
 void relu_op(Node_t* self) {
+    assert(self);
     const Node_t* left = self->child[0];
     assert(left);
-    assert(left->shape.num_cols == 1);
-    for (int i = 0; i < left->shape.num_rows; i++) {
-        self->value[i] = relu(left->value[i]);
-    }
+
+    assert(left->data.shape.num_cols == 1);
+
+    tensor_comp_func(&self->data, &left->data, relu);
 }
 
 //
@@ -120,12 +99,7 @@ void relu_op(Node_t* self) {
 //
 
 void mul_grad(const Node_t* self, Node_t* child) {
-    assert(child == self->child[0] || child == self->child[1]);
-    if (child == self->child[0]) {
-        memcpy(child->grad, self->child[1]->value, sizeof(float) * MAX_NUM_VALUES);
-    } else {
-        memcpy(child->grad, self->child[0]->value, sizeof(float) * MAX_NUM_VALUES);
-    }
+    // TODO:
 }
 
 void add_grad(const Node_t* self, Node_t* child) {
@@ -153,21 +127,21 @@ void relu_grad(const Node_t* self, Node_t* child) {
 // where y = W_2 * relu(W_1 * x + b_1) + b_2
 #define NUM_NODES 15
 Node_t g_node[NUM_NODES] = {
-    {"L", 0, -1, {1, 2}, SHAPE_SCALAR, mul_op, mul_grad}, // L
-    {"1/2", 1, 0, {-1, -1}, SHAPE_SCALAR, NULL, NULL, {0.5f}},
-    {"u_2", 2, 0, {3, -1}, SHAPE_SCALAR, dot_self_op, dot_self_grad},
-    {"u_3", 3, 2, {4, 14}, SHAPE_R_2, sub_op, sub_grad},
-    {"y", 4, 3, {5, 13}, SHAPE_R_2, add_op, add_grad}, // y
-    {"u_5", 5, 4, {6, 7}, SHAPE_R_2, mul_op, mul_grad},
-    {"W_2", 6, 5, {-1, -1}, {2, 16}, NULL, NULL}, // W_2
-    {"u_7", 7, 5, {8, -1}, SHAPE_R_16, relu_op, relu_grad},
-    {"u_8", 8, 7, {9, 12}, SHAPE_R_16, add_op, add_grad},
-    {"u_9", 9, 8, {10, 11}, SHAPE_R_16, mul_op, mul_grad},
-    {"W_1", 10, 9, {-1, -1}, {16, 2}, NULL, NULL}, // W_1
-    {"x", 11, 9, {-1, -1}, SHAPE_R_2, NULL, NULL}, // x
-    {"b_1", 12, 8, {-1, -1}, SHAPE_R_16, NULL, NULL}, // b_1
-    {"b_2", 13, 4, {-1, -1}, SHAPE_R_2, NULL, NULL}, // b_2
-    {"y_hat", 14, 3, {-1, -1}, SHAPE_R_2, NULL, NULL} // y_hat
+    {"L", 0, -1, {1, 2}, {SHAPE_SCALAR}, mul_op, mul_grad}, // L
+    {"1/2", 1, 0, {-1, -1}, {SHAPE_SCALAR, {0.5f}}, NULL, NULL},
+    {"u_2", 2, 0, {3, -1}, {SHAPE_SCALAR}, dot_self_op, dot_self_grad},
+    {"u_3", 3, 2, {4, 14}, {SHAPE_R_2}, sub_op, sub_grad},
+    {"y", 4, 3, {5, 13}, {SHAPE_R_2}, add_op, add_grad}, // y
+    {"u_5", 5, 4, {6, 7}, {SHAPE_R_2}, mul_op, mul_grad},
+    {"W_2", 6, 5, {-1, -1}, {{2, 16}}, NULL, NULL}, // W_2
+    {"u_7", 7, 5, {8, -1}, {SHAPE_R_16}, relu_op, relu_grad},
+    {"u_8", 8, 7, {9, 12}, {SHAPE_R_16}, add_op, add_grad},
+    {"u_9", 9, 8, {10, 11}, {SHAPE_R_16}, mul_op, mul_grad},
+    {"W_1", 10, 9, {-1, -1}, {{16, 2}}, NULL, NULL}, // W_1
+    {"x", 11, 9, {-1, -1}, {SHAPE_R_2}, NULL, NULL}, // x
+    {"b_1", 12, 8, {-1, -1}, {SHAPE_R_16}, NULL, NULL}, // b_1
+    {"b_2", 13, 4, {-1, -1}, {SHAPE_R_2}, NULL, NULL}, // b_2
+    {"y_hat", 14, 3, {-1, -1}, {SHAPE_R_2}, NULL, NULL} // y_hat
 };
 
 #define W_1_INDEX 10
@@ -186,8 +160,10 @@ void print_graph(const Node_t* node, int indent) {
 
     // print name
     printf("%s = [ ", node->name);
-    for (int i = 0; i < node->shape.num_cols * node->shape.num_rows; i++) {
-        printf("%0.4f ", node->value[i]);
+
+    // print tensor elements...
+    for (int i = 0; i < node->data.shape.num_cols * node->data.shape.num_rows; i++) {
+        printf("%0.4f ", node->data.value[i]);
     }
     printf("]\n");
 
@@ -258,12 +234,8 @@ void backward() {
     /*
     g_grad_table[0] = 1.0f;
     for (int j = 1; j >= NUM_NODES; j++) {
-        const Node_t* node = g_node + j;
-        int parent_index = node->parent;
-        Node_t* parent = g_node + parent_index;
-        Node_t* left = node->child[0] >= 0 ? g_node + node->child[0] : NULL;
-        Node_t* right = node->child[1] >= 0 ? g_node + node->child[1] : NULL;
-        g_grad_table[j] = g_grad_table[parent_index] * parent->grad_op(parent, node);
+        Node_t* node = g_node + j;
+        g_grad_table[j] = g_grad_table[node->parent_index] * parent->grad_op(parent, node);
     }
     */
 }
@@ -278,13 +250,13 @@ void init_graph(const Params* params)
     }
 
     // W_1
-    memcpy(g_node[W_1_INDEX].value, params->fc1_weight, L1_SIZE * L0_SIZE * sizeof(float));
+    memcpy(g_node[W_1_INDEX].data.value, params->fc1_weight, L1_SIZE * L0_SIZE * sizeof(float));
     // b_1
-    memcpy(g_node[B_1_INDEX].value, params->fc1_bias, L1_SIZE * sizeof(float));
+    memcpy(g_node[B_1_INDEX].data.value, params->fc1_bias, L1_SIZE * sizeof(float));
     // W_2
-    memcpy(g_node[W_2_INDEX].value, params->fc2_weight, L2_SIZE * L1_SIZE * sizeof(float));
+    memcpy(g_node[W_2_INDEX].data.value, params->fc2_weight, L2_SIZE * L1_SIZE * sizeof(float));
     // b_2
-    memcpy(g_node[B_2_INDEX].value, params->fc2_bias, L2_SIZE * sizeof(float));
+    memcpy(g_node[B_2_INDEX].data.value, params->fc2_bias, L2_SIZE * sizeof(float));
 }
 
 int main(int argc, const char* argv[]) {
@@ -296,11 +268,11 @@ int main(int argc, const char* argv[]) {
     init_graph(params);
 
     // y_hat
-    g_node[Y_HAT_INDEX].value[0] = 0.0f;
-    g_node[Y_HAT_INDEX].value[1] = 1.0f;
+    g_node[Y_HAT_INDEX].data.value[0] = 0.0f;
+    g_node[Y_HAT_INDEX].data.value[1] = 1.0f;
     // x
-    g_node[X_INDEX].value[0] = 0.5f;
-    g_node[X_INDEX].value[1] = 0.5f;
+    g_node[X_INDEX].data.value[0] = 0.5f;
+    g_node[X_INDEX].data.value[1] = 0.5f;
 
     forward(g_node);
 

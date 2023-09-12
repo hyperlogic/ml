@@ -23,7 +23,7 @@ typedef struct {
 
 struct Node;
 typedef void (*Operator)(struct Node* self);
-typedef void (*GradientOperator)(const struct Node* self, struct Node* child);
+typedef Tensor (*GradientOperator)(const struct Node* y, const struct Node* x, const Tensor* dz_dy);
 
 #define MAX_NUM_CHILDREN 2
 typedef struct Node {
@@ -96,27 +96,107 @@ void relu_op(Node_t* self) {
 
 //
 // gradient ops - for evaluating gradients "backward"
-// it returns the partial derivative of self w.r.t. the child
 //
 
-void mul_grad(const Node_t* self, Node_t* child) {
-    // TODO:
+Tensor mul_grad(const Node_t* y, const Node_t* x, const Tensor* dz_dy) {
+
+    printf("mul_grad(%s, %s), G =\n", y->name, x->name);
+    tensor_print(dz_dy, 8);
+
+    // according to DLB
+    // if C = A*B  then dC_dA = GB^T and dC_dB = A^TG, where G is dz_dy
+    Tensor result;
+    if (y->child[0] == x) {
+        Tensor B_t;
+        tensor_transpose_xy(&B_t, &y->child[1]->data);
+        tensor_mul(&result, dz_dy, &B_t);
+    } else {
+        Tensor A_t;
+        tensor_transpose_xy(&A_t, &y->child[0]->data);
+        tensor_mul(&result, &A_t, dz_dy);
+    }
+
+    printf("    result =\n");
+    tensor_print(&result, 8);
+
+    return result;
 }
 
-void add_grad(const Node_t* self, Node_t* child) {
-    // TODO:
+Tensor add_grad(const Node_t* y, const Node_t* x, const Tensor* dz_dy) {
+    printf("add_grad(%s, %s), G =\n", y->name, x->name);
+    tensor_print(dz_dy, 8);
+
+    // dy_dx is identity just pass dz_dy thru
+    Tensor result;
+    tensor_copy(&result, dz_dy);
+
+    printf("    result =\n");
+    tensor_print(&result, 8);
+
+    return result;
 }
 
-void sub_grad(const Node_t* self, Node_t* child) {
-    // TODO:
+Tensor sub_grad(const Node_t* y, const Node_t* x, const Tensor* dz_dy) {
+    printf("sub_grad(%s, %s), G =\n", y->name, x->name);
+    tensor_print(dz_dy, 8);
+
+    // dy_dx is identity for left child and -identify for right child
+    Tensor result = {dz_dy->shape};
+    if (x == y->child[0]) {
+        tensor_copy(&result, dz_dy);
+    } else {
+        tensor_neg(&result, dz_dy);
+    }
+
+    printf("    result =\n");
+    tensor_print(&result, 8);
+
+    return result;
 }
 
-void dot_self_grad(const Node_t* self, Node_t* child) {
-    // TODO:
+Tensor dot_self_grad(const Node_t* y, const Node_t* x, const Tensor* dz_dy) {
+    printf("dot_self(%s, %s), G =\n", y->name, x->name);
+    tensor_print(dz_dy, 8);
+
+    // dy/dx = [2*x1, 2*x2]^T
+    const int N = x->data.shape.num_rows;
+    Tensor dy_dx = {{N, 1}};
+    for (int i = 0; i < N; i++) {
+        dy_dx.value[i] = 2.0f * x->data.value[i];
+    }
+
+    printf("dy_dx =\n");
+    tensor_print(&dy_dx, 8);
+
+    Tensor result = {{N, 1}};
+    tensor_mul(&result, &dy_dx, dz_dy);
+
+    printf("    result =\n");
+    tensor_print(&result, 8);
+
+    return result;
 }
 
-void relu_grad(const Node_t* self, Node_t* child) {
-    // TODO:
+Tensor relu_grad(const Node_t* y, const Node_t* x, const Tensor* dz_dy) {
+
+    printf("relu_grad(%s, %s), G =\n", y->name, x->name);
+    tensor_print(dz_dy, 8);
+
+    Tensor dy_dx = {x->data.shape};
+    for (int i = 0; i < dy_dx.shape.num_rows * dy_dx.shape.num_cols; i++) {
+        dy_dx.value[i] = x->data.value[i] > 0.0f ? 1.0f : 0.0f;
+    }
+
+    printf("    dy_dx =\n");
+    tensor_print(&dy_dx, 8);
+
+    Tensor result;
+    tensor_compmul(&result, &dy_dx, dz_dy);
+
+    printf("    result =\n");
+    tensor_print(&result, 8);
+
+    return result;
 }
 
 #define SHAPE_R_2 {2, 1}
@@ -225,14 +305,64 @@ void print_params(const Params* p_params) {
     print_matrix(p_params->fc2_bias, 1, L2_SIZE);
 }
 
-void backward() {
-    /*
-    g_grad_table[0] = 1.0f;
-    for (int j = 1; j >= NUM_NODES; j++) {
-        Node_t* node = g_node + j;
-        g_grad_table[j] = g_grad_table[node->parent_index] * parent->grad_op(parent, node);
+// translate Algorithm 6.6 into code.
+Tensor build_grad(int v) {
+    // V, the variable whose gradient should be added to G and grad_table
+    // G, the graph to modify
+    // G', the restriction of G to nodes that participate in the gradient
+    // grad_table, a data structure mapping nodes to their gradients.
+    //
+    // if V is in grad_table then
+    //   return grad_table[V]
+    if (g_grad_table[v].shape.num_rows != 0 && g_grad_table[v].shape.num_rows != 0) {
+        return g_grad_table[v];
     }
-    */
+
+    // i = 1
+    // for C in get_consumers(V, G') do
+    //     op = get_operation(C)
+    //     D = build_grad(C, G, G', grad_table)
+    //     G[i] = op.bprop(get_inputs(C, G'), V, D)
+    //     i = i + 1
+    // end
+    // G = sum(G_i)
+    // grad_table[v] = G
+    // insert G and the operations creating it into G
+    // return G
+
+    // in our case C is a single node. g_node[v.parent_index]
+    int c = g_node[v].parent_index;
+    Tensor D = build_grad(c);
+    g_grad_table[v] = g_node[c].grad_op(&g_node[c], &g_node[v], &D);
+    return g_grad_table[v];
+}
+
+#define NUM_TARGET_NODES 4
+static int g_target_node[NUM_TARGET_NODES] = {W_1_INDEX, B_1_INDEX, W_2_INDEX, B_2_INDEX};
+
+// translate Algorithm 6.5 into code.
+void backward() {
+    // T - target set of variables whose gradient must be computed
+    // G - the graph
+    // z, the variable to be differentiated - L
+    // Let G' be G pruned to contain only nodes that are ancestors of z, and descendents of nodes in T.
+
+    // grad_table[z] = 1
+    g_grad_table[0].shape.num_rows = 1;
+    g_grad_table[0].shape.num_cols = 1;
+    g_grad_table[0].value[0] = 1.0f;
+
+    // for V in T do
+    for (int i = 0; i < NUM_TARGET_NODES; i++) {
+        build_grad(g_target_node[i]);
+    }
+
+    // print results!
+    printf("\ngrad_table =\n");
+    for (int i = 0; i < NUM_TARGET_NODES; i++) {
+        printf("%s.grad =\n", g_node[g_target_node[i]].name);
+        tensor_print(&g_grad_table[g_target_node[i]], 8);
+    }
 }
 
 void init_graph(const Params* params)
@@ -261,6 +391,12 @@ int main(int argc, const char* argv[]) {
 
     // initialize the computation graph with the parameters from the model.
     init_graph(params);
+
+    // zerograd
+    for (int i = 0; i < NUM_NODES; i++) {
+        g_grad_table[i].shape.num_rows = 0;
+        g_grad_table[i].shape.num_cols = 0;
+    }
 
     // y_hat
     g_node[Y_HAT_INDEX].data.value[0] = 0.0f;

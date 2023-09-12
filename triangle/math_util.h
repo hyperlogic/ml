@@ -17,14 +17,17 @@ typedef struct {
     float value[MAX_TENSOR_VALUES];
 } Tensor;
 
+void tensor_copy(Tensor* result, const Tensor* t);
 void tensor_mul(Tensor* result, const Tensor* lhs, const Tensor* rhs);
 void tensor_add(Tensor* result, const Tensor* lhs, const Tensor* rhs);
 void tensor_sub(Tensor* result, const Tensor* lhs, const Tensor* rhs);
-void tensor_transpose_xy(Tensor* result, const Tensor* lhs);
+void tensor_compmul(Tensor* result, const Tensor* lhs, const Tensor* rhs);
+void tensor_transpose_xy(Tensor* result, const Tensor* t);
+void tensor_neg(Tensor* result, const Tensor* t);
 
 typedef float (*CompFunc)(float);
 
-void tensor_comp_func(Tensor* result, const Tensor* lhs, CompFunc func);
+void tensor_comp_func(Tensor* result, const Tensor* t, CompFunc func);
 
 void tensor_print(const Tensor* t, int num_indent_spaces);
 
